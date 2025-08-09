@@ -44,6 +44,37 @@ def calculate_thickness(resistance: float, lambda_value: float) -> float:
     return resistance * lambda_value
 
 
+# ---------------------------------------------------------------------------
+# Helper functions
+#
+def parse_surface_input(value: str) -> float:
+    """Parse a user‑entered surface expression into a float.
+
+    Users may enter expressions like "20+10+5" to represent multiple wall
+    segments.  This function splits the string on plus signs, strips any
+    whitespace and attempts to convert each term to a float.  Non‑numeric or
+    empty terms are ignored.  The sum of all valid numbers is returned.
+
+    Args:
+        value: A raw string entered by the user.
+
+    Returns:
+        The total surface in square metres represented by the expression.  If
+        no valid numbers are found, returns 0.0.
+    """
+    if not value:
+        return 0.0
+    total = 0.0
+    # Split on '+' and sum numeric parts
+    for part in value.split("+"):
+        part = part.strip().replace(",", ".")  # allow comma as decimal separator
+        try:
+            total += float(part)
+        except ValueError:
+            # Ignore non‑numeric tokens
+            continue
+    return total
+
 
 def run_app() -> None:
     """Launch the Streamlit application."""
@@ -110,9 +141,15 @@ def run_app() -> None:
     st.header("Saisissez les surfaces et paramètres par zone")
     for zone in resistances:
         with st.expander(f"{zone}"):
-            surface = st.number_input(
-                f"Surface pour {zone.lower()} (m²)", min_value=0.0, value=0.0, step=1.0, key=f"surface_{zone}"
+            # Entrée de surface sous forme d'expression (ex : "20+10+5")
+            surface_expr = st.text_input(
+                f"Surface pour {zone.lower()} (m²)",
+                value="",
+                placeholder="ex : 20+10+5",
+                key=f"surface_{zone}",
             )
+            surface = parse_surface_input(surface_expr)
+
             # Sélectionner les mousses disponibles pour cette zone
             foam_options = [name for name, data in foams.items() if zone in data["allowed_zones"]]
             if not foam_options:
@@ -125,18 +162,31 @@ def run_app() -> None:
             lambda_val = foam_data["lambda"]
             unit_price = foam_data["price"]
 
-            # Déterminer l'épaisseur
+            # Déterminer l'épaisseur par défaut (en cm)
+            default_thickness_m = calculate_thickness(resistances[zone], lambda_val)
+            default_thickness_cm = default_thickness_m * 100.0
+
+            # Champ d'épaisseur modifiable par l'utilisateur
             if zone == "Sol":
+                # Pour le sol, conserver le comportement existant : si zéro, utilise la valeur par défaut
                 thickness_cm = st.number_input(
-                    "Épaisseur souhaitée (cm) – laissez 0 pour calculer selon R ≃ 3", min_value=0.0, value=0.0, step=0.1, key=f"thickness_{zone}"
+                    "Épaisseur souhaitée (cm) – laissez 0 pour calculer selon R ≃ 3",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"thickness_{zone}",
                 )
                 if thickness_cm <= 0.0:
-                    # calculer selon la résistance par défaut
-                    thickness_m = calculate_thickness(resistances[zone], lambda_val)
-                    thickness_cm = thickness_m * 100.0
+                    thickness_cm = default_thickness_cm
             else:
-                thickness_m = calculate_thickness(resistances[zone], lambda_val)
-                thickness_cm = thickness_m * 100.0
+                # Pour les autres zones, proposer directement l'épaisseur par défaut et la rendre modifiable
+                thickness_cm = st.number_input(
+                    "Épaisseur (cm)",
+                    min_value=0.0,
+                    value=float(f"{default_thickness_cm:.2f}"),
+                    step=0.1,
+                    key=f"thickness_{zone}",
+                )
 
             # Calculer le R réel obtenu avec l'épaisseur choisie/calculée
             r_calc = (thickness_cm / 100.0) / lambda_val if lambda_val > 0 else 0.0
@@ -148,45 +198,71 @@ def run_app() -> None:
             # Coûts supplémentaires spécifiques
             extra_cost = 0.0
             if zone == "Murs":
-                # Coupe et évacuation des déchets
-                extra_cost += 5.0 * surface
-                st.write(
-                    f"Coût coupe/évacuation des déchets (5 €/m²) : {5.0 * surface:.2f} €"
+                # Choix d'inclure ou non la coupe/évacuation des déchets
+                include_cutting = st.checkbox(
+                    "Inclure la coupe et l’évacuation des déchets (5 €/m²)",
+                    value=True,
+                    key=f"include_cutting_{zone}",
                 )
+                if include_cutting and surface > 0:
+                    extra_cost += 5.0 * surface
+                    st.write(f"Coût coupe/évacuation des déchets (5 €/m²) : {5.0 * surface:.2f} €")
                 # Protection des menuiseries
                 nb_menuiseries = st.number_input(
-                    "Nombre de menuiseries (fenêtres, baies vitrées…) à protéger", min_value=0, value=0, step=1, key=f"nb_menuiseries_{zone}"
+                    "Nombre de menuiseries (fenêtres, baies vitrées…) à protéger",
+                    min_value=0,
+                    value=0,
+                    step=1,
+                    key=f"nb_menuiseries_{zone}",
                 )
                 cost_per_menuiserie = st.number_input(
-                    "Coût de protection par menuiserie (€)", min_value=0.0, value=10.0, step=1.0, key=f"cost_menuiserie_{zone}"
+                    "Coût de protection par menuiserie (€)",
+                    min_value=0.0,
+                    value=10.0,
+                    step=1.0,
+                    key=f"cost_menuiserie_{zone}",
                 )
                 extra_cost += nb_menuiseries * cost_per_menuiserie
             elif zone == "Sol":
                 # Protection des bas de murs et des fenêtres
                 cost_protection = st.number_input(
-                    "Coût de protection des bas de murs et des fenêtres (€)", min_value=0.0, value=0.0, step=1.0, key=f"cost_protection_{zone}"
+                    "Coût de protection des bas de murs et des fenêtres (€)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    key=f"cost_protection_{zone}",
                 )
                 extra_cost += cost_protection
                 # Ponçage
                 cost_sanding = st.number_input(
-                    "Coût du ponçage par m² (€)", min_value=0.0, value=0.0, step=1.0, key=f"cost_sanding_{zone}"
+                    "Coût du ponçage par m² (€)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    key=f"cost_sanding_{zone}",
                 )
                 extra_cost += cost_sanding * surface
             elif zone == "Plafonds de cave":
-                # Optionnel : couper/évacuer pour les plafonds
+                # Optionnel : couper/évacuer pour les plafonds
                 cost_cutting = st.number_input(
-                    "Coût pour coupe et évacuation des déchets par m² (optionnel)", min_value=0.0, value=0.0, step=1.0, key=f"cost_cutting_{zone}"
+                    "Coût pour coupe et évacuation des déchets par m² (optionnel)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    key=f"cost_cutting_{zone}",
                 )
                 extra_cost += cost_cutting * surface
+
             # Afficher les résultats pour cette zone
             zone_total = material_cost + extra_cost
-            st.write(
-                f"Épaisseur calculée : **{thickness_cm:.1f} cm** – Résistance obtenue ≃ **{r_calc:.2f} m²·K/W**"
-            )
-            st.write(f"Coût de la mousse : **{material_cost:.2f} €**")
-            if extra_cost > 0:
-                st.write(f"Coûts supplémentaires pour cette zone : **{extra_cost:.2f} €**")
-            st.write(f"Total pour {zone.lower()} : **{zone_total:.2f} €**")
+            if surface > 0:
+                st.write(
+                    f"Épaisseur appliquée : **{thickness_cm:.1f} cm** – Résistance obtenue ≃ **{r_calc:.2f} m²·K/W**"
+                )
+                st.write(f"Coût de la mousse : **{material_cost:.2f} €**")
+                if extra_cost > 0:
+                    st.write(f"Coûts supplémentaires pour cette zone : **{extra_cost:.2f} €**")
+                st.write(f"Total pour {zone.lower()} : **{zone_total:.2f} €**")
 
             # Conserver les totaux
             total_material_cost += material_cost
