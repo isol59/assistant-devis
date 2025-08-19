@@ -1,18 +1,15 @@
 """
-devis_app.py - Assistant de devis mousse polyuréthane (multi-lignes par zone)
+devis_app.py - Assistant de devis mousse polyuréthane (multi-lignes, mousse libre par article)
 
-Fonctions principales :
+Points clés :
 - Plusieurs lignes par zone (Murs, Rampants, Combles, Sol, Plafonds de cave, Vide sanitaires)
-  => chaque ligne a sa surface (acceptant 20+10+5), sa mousse, son épaisseur modifiable et ses extras
-- Affiche le total de surface calculé juste sous le champ (ex : '20+10+50' → '= 80.00 m²')
-- Ligne globale : Diverses protections & calfeutrage (HT)
-- Déplacement caché si = 0
-- Totaux en HT + sélection TVA (5,5 % ou 20 %) + TTC
-
-Paramètres mousses (prix en €/cm/m²) :
-- 008E (cellules ouvertes)  λ=0.037   prix=1.50
-- 240PX (Isotrie, fermées)  λ=0.0225  prix=3.80   (corrigé)
-- 35Z  (Synthésia, fermées) λ=0.027   prix=3.50
+- Surface en expression (ex: 20+10+50) + affichage du total calculé (= 80.00 m²)
+- Mousse au choix pour CHAQUE ligne (y compris cellules fermées en rampants/combles)
+- Note "(hors usage habituel)" si la mousse sélectionnée n'est pas celle recommandée pour la zone
+- Épaisseur modifiable par ligne, calcul R obtenu
+- Diverses protections & calfeutrage (ligne globale)
+- Déplacement masqué si 0
+- Totaux HT + sélection TVA (5,5 % ou 20 %) + TTC
 """
 
 from __future__ import annotations
@@ -71,7 +68,7 @@ FOAMS = {
 def run_app():
     st.set_page_config(page_title="Assistant devis mousse PU", page_icon="🧾", layout="centered")
     st.title("Assistant de devis – Mousse polyuréthane (multi-lignes)")
-    st.caption("Ajoutez plusieurs postes par zone (épaisseurs différentes en plafonds, murs, sols, etc.).")
+    st.caption("Plusieurs postes par zone, avec choix de la mousse pour chaque article (y compris cellules fermées en rampants/combles).")
 
     # ---- Infos générales
     st.header("Informations générales")
@@ -115,14 +112,18 @@ def run_app():
                 surface = parse_surface_input(surface_expr)
                 st.caption(f"= {surface:.2f} m²")
 
-                # Mousse autorisée pour cette zone
-                foam_options = [n for n, d in FOAMS.items() if zone_name in d["allowed_zones"]]
+                # Mousse : AU CHOIX pour chaque ligne (toutes les mousses)
+                foam_options = list(FOAMS.keys())
                 foam_choice = st.selectbox(
                     f"Mousse ligne {i+1}",
                     foam_options, key=f"foam_{zone_name}_{i}"
                 )
                 lambda_val = FOAMS[foam_choice]["lambda"]
                 unit_price = FOAMS[foam_choice]["price"]
+
+                # Alerte douce si mousse hors usage habituel pour cette zone
+                if zone_name not in FOAMS[foam_choice]["allowed_zones"]:
+                    st.caption("⚠️ Mousse sélectionnée hors usage habituel pour cette zone (information).")
 
                 # Épaisseur par défaut selon R mini (modifiable)
                 default_thick_cm = calculate_thickness(r_min, lambda_val) * 100.0
