@@ -4,6 +4,7 @@ devis_app.py - Assistant de devis mousse polyuréthane (multi-lignes par zone)
 Fonctions principales :
 - Plusieurs lignes par zone (Murs, Rampants, Combles, Sol, Plafonds de cave, Vide sanitaires)
   => chaque ligne a sa surface (acceptant 20+10+5), sa mousse, son épaisseur modifiable et ses extras
+- Affiche le total de surface calculé juste sous le champ (ex : '20+10+50' → '= 80.00 m²')
 - Ligne globale : Diverses protections & calfeutrage (HT)
 - Déplacement caché si = 0
 - Totaux en HT + sélection TVA (5,5 % ou 20 %) + TTC
@@ -76,15 +77,19 @@ def run_app():
     st.header("Informations générales")
     col1, col2 = st.columns(2)
     with col1:
-        distance = st.number_input("Distance aller simple (km) – 1 €/km A/R",
-                                   min_value=0.0, value=0.0, step=1.0)
+        distance = st.number_input(
+            "Distance aller simple (km) – 1 €/km A/R",
+            min_value=0.0, value=0.0, step=1.0
+        )
         travel_cost = distance * 2 * 1.0  # A/R
         if travel_cost > 0:
             st.caption(f"Coût déplacement estimé (HT) : {travel_cost:.2f} €")
     with col2:
-        extra_global = st.number_input("Diverses protections & calfeutrage (HT, €)",
-                                       min_value=0.0, value=0.0, step=1.0,
-                                       help="Montant global pour ruban, films, joints, calfeutrage…")
+        extra_global = st.number_input(
+            "Diverses protections & calfeutrage (HT, €)",
+            min_value=0.0, value=0.0, step=1.0,
+            help="Montant global pour ruban, films, joints, calfeutrage…"
+        )
 
     total_material_cost = 0.0
     total_extra_cost = 0.0
@@ -94,17 +99,21 @@ def run_app():
     for zone_name, r_min in RESISTANCES.items():
         with st.expander(zone_name, expanded=False):
             # Nombre de lignes pour cette zone
-            nb = st.number_input(f"Nombre de lignes pour {zone_name.lower()}",
-                                 min_value=0, value=0, step=1, key=f"nb_{zone_name}")
+            nb = st.number_input(
+                f"Nombre de lignes pour {zone_name.lower()}",
+                min_value=0, value=0, step=1, key=f"nb_{zone_name}"
+            )
             # Boucle sur chaque ligne
             for i in range(int(nb)):
                 st.markdown(f"**Ligne {i+1}**")
-                # Surface
+
+                # Surface : saisie expression + résultat affiché
                 surface_expr = st.text_input(
-                    f"Surface ligne {i+1} (m²) – ex : 20+10+5",
-                    value="", placeholder="ex : 20+10+5", key=f"surf_{zone_name}_{i}"
+                    f"Surface ligne {i+1} (m²) – ex : 20+10+50",
+                    value="", placeholder="ex : 20+10+50", key=f"surf_{zone_name}_{i}"
                 )
                 surface = parse_surface_input(surface_expr)
+                st.caption(f"= {surface:.2f} m²")
 
                 # Mousse autorisée pour cette zone
                 foam_options = [n for n, d in FOAMS.items() if zone_name in d["allowed_zones"]]
@@ -115,7 +124,7 @@ def run_app():
                 lambda_val = FOAMS[foam_choice]["lambda"]
                 unit_price = FOAMS[foam_choice]["price"]
 
-                # Épaisseur par défaut selon R mini
+                # Épaisseur par défaut selon R mini (modifiable)
                 default_thick_cm = calculate_thickness(r_min, lambda_val) * 100.0
                 thickness_cm = st.number_input(
                     f"Épaisseur ligne {i+1} (cm)",
@@ -134,39 +143,44 @@ def run_app():
                 # Extras spécifiques par zone (par ligne)
                 extras = 0.0
                 if zone_name == "Murs":
-                    # Option coupe/évacuation
-                    include_cut = st.checkbox("Inclure coupe + évacuation (5 €/m²)",
-                                              value=True, key=f"cut_{zone_name}_{i}")
+                    include_cut = st.checkbox(
+                        "Inclure coupe + évacuation (5 €/m²)",
+                        value=True, key=f"cut_{zone_name}_{i}"
+                    )
                     if include_cut and surface > 0:
                         extras += 5.0 * surface
-                    # Protections menuiseries
                     colm1, colm2 = st.columns(2)
                     with colm1:
-                        nb_menuiseries = st.number_input("Nb menuiseries à protéger",
-                                                         min_value=0, value=0, step=1,
-                                                         key=f"nb_m_{zone_name}_{i}")
+                        nb_menuiseries = st.number_input(
+                            "Nb menuiseries à protéger",
+                            min_value=0, value=0, step=1, key=f"nb_m_{zone_name}_{i}"
+                        )
                     with colm2:
-                        cost_per_menuiserie = st.number_input("Coût par menuiserie (€)",
-                                                              min_value=0.0, value=10.0, step=1.0,
-                                                              key=f"cpm_{zone_name}_{i}")
+                        cost_per_menuiserie = st.number_input(
+                            "Coût par menuiserie (€)",
+                            min_value=0.0, value=10.0, step=1.0, key=f"cpm_{zone_name}_{i}"
+                        )
                     extras += nb_menuiseries * cost_per_menuiserie
 
                 elif zone_name == "Sol":
                     col_s1, col_s2 = st.columns(2)
                     with col_s1:
-                        cost_protection = st.number_input("Protection bas de murs & fenêtres (€)",
-                                                          min_value=0.0, value=0.0, step=1.0,
-                                                          key=f"prot_{zone_name}_{i}")
+                        cost_protection = st.number_input(
+                            "Protection bas de murs & fenêtres (€)",
+                            min_value=0.0, value=0.0, step=1.0, key=f"prot_{zone_name}_{i}"
+                        )
                     with col_s2:
-                        cost_sanding_m2 = st.number_input("Ponçage (€/m²)",
-                                                          min_value=0.0, value=0.0, step=1.0,
-                                                          key=f"sand_{zone_name}_{i}")
+                        cost_sanding_m2 = st.number_input(
+                            "Ponçage (€/m²)",
+                            min_value=0.0, value=0.0, step=1.0, key=f"sand_{zone_name}_{i}"
+                        )
                     extras += cost_protection + cost_sanding_m2 * surface
 
                 elif zone_name == "Plafonds de cave":
-                    cost_cutting_m2 = st.number_input("Coupe/évacuation (€/m²)",
-                                                      min_value=0.0, value=0.0, step=1.0,
-                                                      key=f"cut_cave_{zone_name}_{i}")
+                    cost_cutting_m2 = st.number_input(
+                        "Coupe/évacuation (€/m²)",
+                        min_value=0.0, value=0.0, step=1.0, key=f"cut_cave_{zone_name}_{i}"
+                    )
                     extras += cost_cutting_m2 * surface
 
                 # Affichage ligne
