@@ -57,4 +57,20 @@ def build_pdf_goodnotes(line_items, totals, tva_choice):
     buffer.seek(0)
     return buffer.read()
 
-st.write("✅ Fichier test avec logo intégré et numéro 06 98 96 18 80")
+st.title("Assistant Devis Isol'59")
+
+st.subheader("Intervention diverse")
+desc_diverse = st.text_input("Description de l'intervention")
+montant_diverse = st.number_input("Montant HT (€)", min_value=0.0, step=1.0)
+
+items = []
+if desc_diverse and montant_diverse > 0:
+    items.append(f"{desc_diverse} : {montant_diverse:.2f} €")
+
+totaux_fictifs = (0, 0, 0, montant_diverse, montant_diverse)
+
+tva_select = st.selectbox("Choisir la TVA", ["5.5%", "10%", "20%"])
+
+if st.button("Exporter PDF GoodNotes"):
+    pdf_bytes = build_pdf_goodnotes(items, totaux_fictifs, tva_select)
+    st.download_button("📄 Télécharger le PDF", data=pdf_bytes, file_name="devis_goodnotes.pdf")
