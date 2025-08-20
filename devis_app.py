@@ -2,13 +2,13 @@
 devis_app.py - Assistant de devis mousse polyuréthane
 - Multi-lignes par zone (Murs, Rampants, Combles, Sol, Plafonds de cave, Vide sanitaires)
 - Surface en expression (ex: 20+10+50) + affichage du total (= … m²)
-- Mousse au choix pour CHAQUE ligne (avec note si hors usage habituel)
+- Mousse au choix pour CHAQUE ligne (note si hors usage habituel)
 - Épaisseur modifiable, R calculé
 - Diverses protections & calfeutrage (HT, global)
 - Déplacement masqué si 0
 - Totaux HT → TVA (5,5% / 10% / 20%) → TTC
-- Export PDF SIMPLE et PRO (TVA choisie au moment de l’export)
-- Logo intégré en base64 (modifiable ci-dessous)
+- Export PDF SIMPLE, PRO, et GOODNOTES (TVA choisie au moment de l’export)
+- Logo intégré en base64 (placeholder, remplaçable)
 """
 
 from __future__ import annotations
@@ -85,10 +85,10 @@ FOAMS: Dict[str, Dict] = {
 def run_app():
     st.set_page_config(page_title="Assistant devis mousse PU", page_icon="🧾", layout="centered")
     st.title("Assistant de devis – Mousse polyuréthane (multi-lignes)")
-    st.caption("Choix de la mousse par ligne, R calculé, HT → TVA → TTC. Export PDF simple & pro.")
+    st.caption("Choix de la mousse par ligne, R calculé, HT → TVA → TTC. Export PDF simple, pro & GoodNotes.")
 
     # ---- Infos client (utilisé surtout pour PDF pro)
-    with st.expander("Infos client (facultatif, utilisé dans le PDF pro)"):
+    with st.expander("Infos client (facultatif, utilisé dans le PDF pro et GoodNotes)"):
         colc1, colc2 = st.columns(2)
         with colc1:
             client_nom = st.text_input("Nom / Entreprise")
@@ -234,10 +234,10 @@ def run_app():
 
     # ======= EXPORTS PDF (TVA choisie au moment de l’export) =======
     st.subheader("Export PDF")
-    exp_col1, exp_col2 = st.columns(2)
+    exp_col1, exp_col2, exp_col3 = st.columns(3)
 
     with exp_col1:
-        tva_choice_simple = st.selectbox("TVA pour PDF simple", ["5.5 %", "10 %", "20 %"], key="tva_simple")
+        tva_choice_simple = st.selectbox("TVA (PDF simple)", ["5.5 %", "10 %", "20 %"], key="tva_simple")
         if st.button("📄 Export PDF simple"):
             pdf_bytes = build_pdf_simple(
                 line_items=line_items,
@@ -247,7 +247,7 @@ def run_app():
             st.download_button("Télécharger PDF simple", data=pdf_bytes, file_name="devis_simple.pdf", mime="application/pdf")
 
     with exp_col2:
-        tva_choice_pro = st.selectbox("TVA pour PDF pro", ["5.5 %", "10 %", "20 %"], key="tva_pro")
+        tva_choice_pro = st.selectbox("TVA (PDF pro)", ["5.5 %", "10 %", "20 %"], key="tva_pro")
         if st.button("📄 Export PDF pro"):
             pdf_bytes = build_pdf_pro(
                 client=(client_nom, client_email, client_tel, chantier_adresse, ref_devis, str(date_devis)),
@@ -256,6 +256,17 @@ def run_app():
                 tva_choice=tva_choice_pro
             )
             st.download_button("Télécharger PDF pro", data=pdf_bytes, file_name="devis_pro.pdf", mime="application/pdf")
+
+    with exp_col3:
+        tva_choice_gn = st.selectbox("TVA (PDF GoodNotes)", ["5.5 %", "10 %", "20 %"], key="tva_gn")
+        if st.button("✍️ Export PDF GoodNotes (signature)"):
+            pdf_bytes = build_pdf_goodnotes(
+                client=(client_nom, client_email, client_tel, chantier_adresse, ref_devis, str(date_devis)),
+                line_items=line_items,
+                totals=(total_material_cost, total_extra_cost, travel_cost, extra_global, total_ht),
+                tva_choice=tva_choice_gn
+            )
+            st.download_button("Télécharger PDF GoodNotes", data=pdf_bytes, file_name="devis_goodnotes.pdf", mime="application/pdf")
 
 # ================== Génération des PDFs ==================
 
@@ -271,10 +282,8 @@ def build_pdf_simple(
     totals: Tuple[float, float, float, float, float],
     tva_choice: str
 ) -> bytes:
-    """
-    PDF simple : logo, lignes (zone/surface/mousse/épaisseur/coûts), totaux HT, TVA, TTC.
-    """
-    # Import ici pour éviter erreur si reportlab manque au chargement de l'app
+    """PDF simple : logo, lignes, totaux HT, TVA, TTC."""
+    # Import local pour éviter erreur si reportlab manque
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import mm
@@ -330,9 +339,7 @@ def build_pdf_pro(
     totals: Tuple[float, float, float, float, float],
     tva_choice: str
 ) -> bytes:
-    """
-    PDF pro : en-tête Isol’59 + coordonnées client, tableau lignes, totaux, pied de page.
-    """
+    """PDF pro : en-tête Isol’59 + coordonnées client, tableau lignes, totaux, pied de page."""
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import mm
@@ -349,7 +356,7 @@ def build_pdf_pro(
     c = canvas.Canvas(buff, pagesize=A4)
     width, height = A4
 
-    # En-tête avec logo + infos société (fixes ici, adaptez si besoin)
+    # En-tête
     try:
         c.drawImage(logo_io, width - 45*mm, height - 25*mm, width=35*mm, height=20*mm, preserveAspectRatio=True, mask='auto')
     except Exception:
@@ -359,7 +366,6 @@ def build_pdf_pro(
     c.drawString(20*mm, height - 18*mm, "Devis – Isolation mousse polyuréthane")
 
     c.setFont("Helvetica", 9)
-    c.setFillColor(colors.black)
     c.drawString(20*mm, height - 25*mm, "Isol’59 • Spécialiste isolation mousse polyuréthane")
     c.drawString(20*mm, height - 30*mm, "contact@isol59.fr • 06 00 00 00 00")
 
@@ -377,7 +383,7 @@ def build_pdf_pro(
     y -= 5*mm
     c.drawString(20*mm, y, f"Réf devis : {ref_devis or '-'}   |   Date : {date_devis or '-'}")
 
-    # Tableau lignes
+    # Tableau
     y -= 10*mm
     c.setFont("Helvetica-Bold", 10)
     c.drawString(15*mm, y, "Zone")
@@ -421,8 +427,120 @@ def build_pdf_pro(
 
     # Pied de page
     c.setFont("Helvetica", 8)
+    from reportlab.lib import colors
     c.setFillColor(colors.grey)
     c.drawString(15*mm, 15*mm, "Isol’59 – Votre spécialiste isolation depuis 2017 • devis sans engagement • validité 30 jours")
+
+    c.showPage()
+    c.save()
+    return buff.getvalue()
+
+def build_pdf_goodnotes(
+    client: Tuple[str, str, str, str, str, str],
+    line_items: List[Tuple[str, float, str, float, float, float]],
+    totals: Tuple[float, float, float, float, float],
+    tva_choice: str
+) -> bytes:
+    """PDF GoodNotes : identique au pro, avec large zone de signature/date en bas de page."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+
+    client_nom, client_email, client_tel, chantier_adresse, ref_devis, date_devis = client
+    logo_io = decode_logo_bio()
+    total_material_cost, total_extra_cost, travel_cost, extra_global, total_ht = totals
+    tva_rate = _tva_rate_from_choice(tva_choice)
+    tva_amount = total_ht * tva_rate
+    total_ttc = total_ht + tva_amount
+
+    buff = io.BytesIO()
+    c = canvas.Canvas(buff, pagesize=A4)
+    width, height = A4
+
+    # En-tête (logo + titre + infos fixes)
+    try:
+        c.drawImage(logo_io, width - 45*mm, height - 25*mm, width=35*mm, height=20*mm, preserveAspectRatio=True, mask='auto')
+    except Exception:
+        pass
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(20*mm, height - 18*mm, "Devis – Isolation mousse polyuréthane")
+
+    c.setFont("Helvetica", 9)
+    c.drawString(20*mm, height - 25*mm, "Isol’59 • Spécialiste isolation mousse polyuréthane")
+    c.drawString(20*mm, height - 30*mm, "contact@isol59.fr • 06 00 00 00 00")
+
+    # Coordonnées client
+    y = height - 45*mm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(20*mm, y, "Client")
+    c.setFont("Helvetica", 10)
+    y -= 6*mm
+    c.drawString(20*mm, y, f"Nom/Entreprise : {client_nom or '-'}")
+    y -= 5*mm
+    c.drawString(20*mm, y, f"Email : {client_email or '-'}   |   Tél : {client_tel or '-'}")
+    y -= 5*mm
+    c.drawString(20*mm, y, f"Chantier : {chantier_adresse or '-'}")
+    y -= 5*mm
+    c.drawString(20*mm, y, f"Réf devis : {ref_devis or '-'}   |   Date : {date_devis or '-'}")
+
+    # Tableau simple
+    y -= 10*mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(15*mm, y, "Zone")
+    c.drawString(45*mm, y, "Surface (m²)")
+    c.drawString(80*mm, y, "Mousse")
+    c.drawString(120*mm, y, "Ép. (cm)")
+    c.drawString(145*mm, y, "Mousse HT")
+    c.drawString(175*mm, y, "Extras HT")
+    y -= 4*mm
+    c.line(15*mm, y, 195*mm, y)
+    y -= 5*mm
+    c.setFont("Helvetica", 9)
+
+    for (zone, surface, foam, ep_cm, mat_ht, extras_ht) in line_items:
+        c.drawString(15*mm, y, zone)
+        c.drawRightString(75*mm, y, f"{surface:.1f}")
+        c.drawString(80*mm, y, foam[:36])
+        c.drawRightString(140*mm, y, f"{ep_cm:.1f}")
+        c.drawRightString(170*mm, y, f"{mat_ht:.2f} €")
+        c.drawRightString(195*mm, y, f"{extras_ht:.2f} €")
+        y -= 6*mm
+        if y < 55*mm:  # on garde de la place pour la signature
+            c.showPage()
+            y = height - 20*mm
+            c.setFont("Helvetica", 9)
+
+    # Totaux
+    if y < 65*mm:
+        c.showPage()
+        y = height - 20*mm
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(15*mm, y, f"Montant HT : {total_ht:.2f} €")
+    y -= 6*mm
+    c.setFont("Helvetica", 10)
+    c.drawString(15*mm, y, f"TVA ({tva_choice}) : {tva_amount:.2f} €")
+    y -= 6*mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(15*mm, y, f"Montant TTC : {total_ttc:.2f} €")
+    y -= 12*mm
+
+    # Encadré signature/date (grand espace pour stylet)
+    from reportlab.lib import colors
+    c.setStrokeColor(colors.black)
+    c.setLineWidth(1)
+    box_x1, box_y1 = 15*mm, 20*mm
+    box_x2, box_y2 = 195*mm, 55*mm
+    c.rect(box_x1, box_y1, box_x2 - box_x1, box_y2 - box_y1, stroke=1, fill=0)
+
+    c.setFont("Helvetica", 10)
+    c.drawString(box_x1 + 5*mm, box_y2 - 8*mm, "Signature du client :")
+    c.line(box_x1 + 50*mm, box_y2 - 10*mm, box_x2 - 10*mm, box_y2 - 10*mm)
+
+    c.drawString(box_x1 + 5*mm, box_y2 - 18*mm, "Date :")
+    c.line(box_x1 + 20*mm, box_y2 - 20*mm, box_x1 + 60*mm, box_y2 - 20*mm)
 
     c.showPage()
     c.save()
